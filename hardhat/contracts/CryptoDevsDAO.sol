@@ -50,4 +50,59 @@ returns(uint256)
     return numProposals-1;
 }
 
+modifier activeProposalOnly(uint256 proposalIndex) {
+    require(proposals[proposalIndex].deadline > block.timestamp, "Proposal is not active");
+    _;
+    
+}
+
+enum Vote {Yay, Nay}
+function voteOnProposal(uint256 proposalIndex, Vote vote)
+    external
+    nftHolderOnly
+    activeProposalOnly(proposalIndex)
+    {
+        uint256 voterNFTBalance = cryptoDevsNFT.balanceOf(msg.sender);
+        uint256 numvotes= 0;
+
+        for (uint256 i = 0; i < voterNFTBalance; i++) {
+            uint256 tokenId= cryptoDevsNFT.tokenOfOwnerByIndex(msg.sender, i);
+            if(!proposals[proposalIndex].voters[tokenId]){
+                numvotes++;
+                proposals[proposalIndex].voters[tokenId] = true;
+            }
+        }
+    
+        require(numvotes > 0, "You have already voted on this proposal");
+        if(vote == Vote.Yay){
+            proposals[proposalIndex].yayvotes += numvotes;
+        } else {
+            proposals[proposalIndex].nayvotes += numvotes;
+        }
+
+}
+modifier inactiveProposalOnly(uint256 proposalIndex) {
+    require(proposals[proposalIndex].deadline < block.timestamp, "Proposal is not inactive");
+    require(proposals[proposalIndex].executed == false, "Proposal has already been executed");
+    _;
+    
+}
+function executeProposal(uint256 proposalIndex)
+external
+nftHolderOnly
+inactiveProposalOnly(proposalIndex)
+{
+    Proposal storage proposal = proposals[proposalIndex];
+    if(proposal.yayvotes > proposal.nayvotes){
+        uint256 nftPrice = nftMarketplace.getPrice();
+        require(address(this).balance >= nftPrice, "Not enough funds to purchase NFT");
+        nftMarketplace.purchase{value: nftPrice}(proposal.nftTokenId);
+    }
+    proposal.executed = true;
+}
+function withdraw() external onlyOwner {
+    payable(msg.sender).transfer(address(this).balance);
+}
+receive() external payable {}
+fallback() external payable {}
 }
